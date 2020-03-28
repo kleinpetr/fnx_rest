@@ -34,9 +34,9 @@ class RestClient {
 
   Stream<bool> get workingStream => _workingStreamController.stream;
 
-  final StreamController<RestResult> _resultStreamController = StreamController.broadcast();
+  final StreamController<RestOperation> _operationStreamController = StreamController.broadcast();
 
-  Stream<RestResult> get resultStream => _resultStreamController.stream;
+  Stream<RestOperation> get operationStream => _operationStreamController.stream;
 
   RestClient(RestHttpClient httpClient, RestClient parent, String url, {Map<String, String> headers}) {
     _parent = parent;
@@ -53,7 +53,11 @@ class RestClient {
   }
 
   RestClient child(String urlPart, {Map<String, String> headers}) {
-    return RestClient(_httpClient, this, urlPart, headers: headers);
+    final RestClient _child = RestClient(_httpClient, this, urlPart, headers: headers);
+    _child.operationStream.listen((RestOperation operation) {
+      _notifyOpeartion(operation);
+    });
+    return _child;
   }
 
   /// Configure Accept header with appropriate [Deserializer].
@@ -147,7 +151,7 @@ class RestClient {
   }
 
   Future<RestResult> handleResponse(Future<Response> resp) {
-    _notifyNewResult(resp);
+    _notifyOpeartion(resp);
     return processResponse(effAccepts, resp.whenComplete(_workCompleted));
   }
 
@@ -334,8 +338,20 @@ class RestClient {
     _workingStreamController.add(working);
   }
 
-  void _notifyNewResult(Future<Response> resp) async {
-    _resultStreamController.add(await processResponse(effAccepts, resp.whenComplete(_workCompleted)));
+  void _notifyOpeartion(dynamic data) async {
+    RestOperation operation;
+
+    if (data is RestOperation) {
+      operation = data;
+    } else {
+      RestResult rr;
+      if (data is RestResult) rr = data;
+      if (data is Future<Response>) rr = await processResponse(effAccepts, data.whenComplete(_workCompleted));
+      assert(rr != null);
+      operation = RestOperation(url, rr);
+    }
+
+    _operationStreamController.add(operation);
   }
 }
 
@@ -494,4 +510,11 @@ class Produces {
   Produces(this.mime, this.serializer);
 
   dynamic serialize(dynamic payload, Map<String, String> requestHeaders) => serializer(payload, requestHeaders);
+}
+
+class RestOperation {
+  final String url;
+  final RestResult rr;
+
+  RestOperation(this.url, this.rr);
 }

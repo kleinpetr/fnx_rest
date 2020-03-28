@@ -31,14 +31,19 @@ class RestClient {
   int _workingCount = 0;
 
   final StreamController<bool> _workingStreamController = StreamController.broadcast();
-
   Stream<bool> get workingStream => _workingStreamController.stream;
 
+  StreamController<RestOperation> _rootOperationStreamController;
   final StreamController<RestOperation> _operationStreamController = StreamController.broadcast();
-
   Stream<RestOperation> get operationStream => _operationStreamController.stream;
 
-  RestClient(RestHttpClient httpClient, RestClient parent, String url, {Map<String, String> headers}) {
+  RestClient(
+    RestHttpClient httpClient,
+    RestClient parent,
+    String url, {
+    Map<String, String> headers,
+    StreamController rootOperationStreamController,
+  }) {
     _parent = parent;
     var parsedUrl = parseUrl(url);
     _url = parsedUrl.url;
@@ -46,6 +51,7 @@ class RestClient {
     _httpClient = httpClient;
     headers ??= {};
     _headers = headers;
+    _rootOperationStreamController = rootOperationStreamController;
     if (parent == null) {
       accepts('application/json', defaultJsonDeserializer);
       produces('application/json', defaultJsonSerializer);
@@ -53,11 +59,13 @@ class RestClient {
   }
 
   RestClient child(String urlPart, {Map<String, String> headers}) {
-    final RestClient _child = RestClient(_httpClient, this, urlPart, headers: headers);
-    _child.operationStream.listen((RestOperation operation) {
-      _notifyOpeartion(operation);
-    });
-    return _child;
+    return RestClient(
+      _httpClient,
+      this,
+      urlPart,
+      headers: headers,
+      rootOperationStreamController: _rootOperationStreamController ?? _operationStreamController,
+    );
   }
 
   /// Configure Accept header with appropriate [Deserializer].
@@ -352,6 +360,7 @@ class RestClient {
     }
 
     _operationStreamController.add(operation);
+    _rootOperationStreamController?.add(operation);
   }
 }
 
